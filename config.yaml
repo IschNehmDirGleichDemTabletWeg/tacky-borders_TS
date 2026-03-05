@@ -144,7 +144,7 @@ global:
         duration: 2000
         easing: EaseInOutQuad
 
-    fps: 10
+    fps: 7
     enabled: True
 
   # effects: Configure visual effects for window borders
@@ -238,3 +238,4 @@ window_rules:
   #   - If not defined in a rule, settings will fall back to global config values.
   #   - Setting 'border enabled' to True forces its initialization, but not necessarily its visibility.
   #     If the border still isn't visible, try setting 'follow_native_border' to False.
+
