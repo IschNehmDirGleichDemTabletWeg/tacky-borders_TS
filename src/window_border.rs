@@ -43,8 +43,8 @@ use crate::utils::{
     WM_APP_MINIMIZESTART, WM_APP_RECREATE_DRAWER, WM_APP_REORDER, WM_APP_SHOWUNCLOAKED,
     WindowsCompatibleError, WindowsCompatibleResult, WindowsContext, are_rects_same_size,
     get_dpi_for_monitor, get_monitor_info, get_window_rule, get_window_title, has_native_border,
-    is_window, is_window_arranged, is_window_cloaked, is_window_minimized, is_window_visible,
-    loword, monitor_from_window, post_message_w,
+    is_window, is_window_arranged, is_window_cloaked, is_window_maximized, is_window_minimized,
+    is_window_visible, loword, monitor_from_window, post_message_w,
 };
 
 const REORDER_TIMER_ID: usize = 0;
@@ -82,6 +82,7 @@ pub struct WindowBorder {
     radius_config: RadiusConfig,
     border_z_order: ZOrderMode,
     follow_native_border: bool,
+    maximized_border_width: f32,
     initialize_delay: u64,
     unminimize_delay: u64,
     // ------------------------------
@@ -108,6 +109,7 @@ impl WindowBorder {
             radius_config: Default::default(),
             border_z_order: Default::default(),
             follow_native_border: Default::default(),
+            maximized_border_width: 1.0,
             initialize_delay: Default::default(),
             unminimize_delay: Default::default(),
             is_paused: Default::default(),
@@ -329,6 +331,9 @@ impl WindowBorder {
         self.follow_native_border = window_rule
             .follow_native_border
             .unwrap_or(global.follow_native_border);
+        self.maximized_border_width = window_rule
+            .maximized_border_width
+            .unwrap_or(global.maximized_border_width);
 
         // If the tracking window is part of the initial windows list (meaning it was already open when
         // tacky-borders was launched), then there should be no initialize delay.
@@ -461,7 +466,11 @@ impl WindowBorder {
     }
 
     fn should_show_border(&self) -> bool {
-        (!self.follow_native_border || has_native_border(self.tracking_window))
+        let native_ok = !self.follow_native_border
+            || has_native_border(self.tracking_window)
+            || is_window_maximized(self.tracking_window);
+
+        native_ok
             && is_window_visible(self.tracking_window)
             && !is_window_cloaked(self.tracking_window)
             && !is_window_minimized(self.tracking_window)
@@ -625,8 +634,16 @@ impl WindowBorder {
             backend.resize(renderer_size.width, renderer_size.height)?;
         }
 
+
+        let (override_width, effective_padding) = if is_window_maximized(self.tracking_window) {
+            let w = (self.maximized_border_width * self.current_dpi as f32 / 96.0).round() as i32;
+            (Some(w), 0)
+        } else {
+            (None, self.window_padding)
+        };
+
         self.border_drawer
-            .render(&self.window_rect, self.window_padding, self.window_state)
+            .render(&self.window_rect, effective_padding, self.window_state, override_width, None)
     }
 
     pub fn render(&mut self) -> WindowsCompatibleResult<()> {
@@ -1017,8 +1034,15 @@ impl WindowBorder {
                     return LRESULT(0);
                 }
 
+                let (override_width, effective_padding) = if is_window_maximized(self.tracking_window) {
+                    let w = (self.maximized_border_width * self.current_dpi as f32 / 96.0).round() as i32;
+                    (Some(w), 0)
+                } else {
+                    (None, self.window_padding)
+                };
+
                 self.border_drawer
-                    .animate(&self.window_rect, self.window_padding, self.window_state)
+                    .animate(&self.window_rect, effective_padding, self.window_state, override_width, None)
                     .log_if_err();
             }
             WM_APP_KOMOREBI => {

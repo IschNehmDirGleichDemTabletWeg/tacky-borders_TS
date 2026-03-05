@@ -663,6 +663,10 @@ pub fn has_native_border(hwnd: HWND) -> bool {
     !style.contains(WS_MAXIMIZE) && ex_style.contains(WS_EX_WINDOWEDGE)
 }
 
+pub fn is_window_maximized(hwnd: HWND) -> bool {
+    get_window_style(hwnd).contains(WS_MAXIMIZE)
+}
+
 pub fn create_border_for_window(tracking_window: HWND, window_rule: WindowRule) {
     let tracking_window_isize = tracking_window.0 as isize;
 

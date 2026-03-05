@@ -140,11 +140,17 @@ impl BorderDrawer {
         window_rect: &RECT,
         window_padding: i32,
         window_state: WindowState,
+        override_border_width: Option<i32>,
+        override_border_offset: Option<i32>,
     ) -> WindowsCompatibleResult<()> {
         self.last_render_time = Some(time::Instant::now());
 
+        let original_border_width = self.border_width;
+        if let Some(w) = override_border_width {
+            self.border_width = w;
+        }
         let border_width = self.border_width as f32;
-        let border_offset = self.border_offset as f32;
+        let border_offset = override_border_offset.unwrap_or(self.border_offset) as f32;
         let window_padding = window_padding as f32;
 
         self.render_rect = D2D1_ROUNDED_RECT {
@@ -173,12 +179,14 @@ impl BorderDrawer {
             RenderBackend::V2(_) => self.render_v2(window_rect, window_state)?,
             RenderBackend::Legacy(_) => self.render_legacy(window_rect, window_state)?,
             RenderBackend::None => {
+                self.border_width = original_border_width;
                 return Err(WindowsCompatibleError::Standalone(
                     StandaloneWindowsError::new(T_E_UNINIT, "render_backend is None"),
                 ));
             }
         }
 
+        self.border_width = original_border_width;
         Ok(())
     }
 
@@ -548,6 +556,8 @@ impl BorderDrawer {
         window_rect: &RECT,
         window_padding: i32,
         window_state: WindowState,
+        override_border_width: Option<i32>,
+        override_border_offset: Option<i32>,
     ) -> anyhow::Result<()> {
         let anim_elapsed = self
             .last_anim_time
@@ -600,7 +610,7 @@ impl BorderDrawer {
         let render_interval = 1.0 / self.animations.fps as f32;
         let time_diff = render_elapsed.as_secs_f32() - render_interval;
         if update && (time_diff.abs() <= 0.001 || time_diff >= 0.0) {
-            self.render(window_rect, window_padding, window_state)?;
+            self.render(window_rect, window_padding, window_state, override_border_width, override_border_offset)?;
         }
 
         Ok(())

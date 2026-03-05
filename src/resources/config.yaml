@@ -47,7 +47,12 @@ global:
   # NOTE: This setting only affects visibility for borders that have been initialized.
   # To make sure a border is initialized in the first place, use window_rules.
   follow_native_border: True
-
+  
+  # maximized_border_width: Border width for maximized windows.
+  # (Values 1-5 = no visible border, 6 = thin line, 7 = ~1px , etc )
+  maximized_border_width: 6
+  
+  
   # initialize_delay: Time (in ms) before the border appears after opening a new window
   # unminimize_delay: Time (in ms) before the border appears after unminimizing a window
   #
