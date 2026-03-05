@@ -26,7 +26,12 @@ use windows::Win32::Storage::FileSystem::{
     ReadDirectoryChangesW,
 };
 use windows::Win32::System::IO::CancelIoEx;
-use windows::core::PCWSTR;
+use windows::Win32::UI::Shell::{
+    BIF_NEWDIALOGSTYLE, BIF_RETURNONLYFSDIRS, BROWSEINFOW, SHBrowseForFolderW, SHGetPathFromIDListW,
+};
+use windows::core::{PCWSTR, PWSTR};
+use winreg::RegKey;
+use winreg::enums::*;
 
 const DEFAULT_CONFIG: &str = include_str!("resources/config.yaml");
 
@@ -240,22 +245,104 @@ impl Config {
     }
 
     pub fn get_dir() -> anyhow::Result<PathBuf> {
-        let config_dir = env::var("TACKY_BORDERS_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|env_err| {
-                home_dir()
-                    .map(|dir| dir.join(".config").join("tacky-borders"))
-                    .ok_or(anyhow!("could not find home dir, and could not access TACKY_BORDERS_CONFIG_HOME env var: {env_err}"))
-            })?;
+        // 1. Umgebungsvariable hat höchste Priorität (bleibt als Override)
+        if let Ok(path) = env::var("TACKY_BORDERS_CONFIG_HOME") {
+            let config_dir = PathBuf::from(path);
+            if !config_dir.exists() {
+                DirBuilder::new()
+                    .recursive(true)
+                    .create(&config_dir)
+                    .context("could not create config directory")?;
+            }
+            return Ok(config_dir);
+        }
 
+        // 2. Registry prüfen: HKCU\SOFTWARE\tackyborders -> ConfigFilePath
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let reg_path = r"SOFTWARE\tackyborders";
+
+        if let Ok(key) = hkcu.open_subkey(reg_path) {
+            if let Ok(path) = key.get_value::<String, _>("ConfigFilePath") {
+                let config_dir = PathBuf::from(path);
+                if !config_dir.exists() {
+                    DirBuilder::new()
+                        .recursive(true)
+                        .create(&config_dir)
+                        .context("could not create config directory")?;
+                }
+                return Ok(config_dir);
+            }
+        }
+
+        // 3. Erster Start: Windows Ordner-Auswahl-Dialog anzeigen
+        let chosen_path = unsafe { Self::show_folder_browser_dialog() };
+
+        let config_dir = match chosen_path {
+            Some(path) => path,
+            None => {
+                // Benutzer hat Abbrechen gedrückt -> Default verwenden
+                home_dir()
+                    .map(|dir| dir.join("Documents").join("tacky-borders"))
+                    .ok_or(anyhow!("could not find home dir"))?
+            }
+        };
+
+        // 4. Gewählten Pfad in Registry speichern
+        let (key, _) = hkcu
+            .create_subkey(reg_path)
+            .context("could not create registry key HKCU\\SOFTWARE\\tackyborders")?;
+
+        key.set_value("ConfigFilePath", &config_dir.to_string_lossy().as_ref())
+            .context("could not write ConfigFilePath to registry")?;
+
+        info!("config path saved to registry: {}", config_dir.display());
+
+        // 5. Verzeichnis erstellen falls nötig
         if !config_dir.exists() {
             DirBuilder::new()
                 .recursive(true)
                 .create(&config_dir)
                 .context("could not create config directory")?;
-        };
+        }
 
         Ok(config_dir)
+    }
+
+    unsafe fn show_folder_browser_dialog() -> Option<PathBuf> {
+        // Titel des Dialogs als UTF-16
+        let title: Vec<u16> = "tacky-borders: Bitte Konfigurationsordner wählen\0"
+            .encode_utf16()
+            .collect();
+
+        let mut display_name = [0u16; 260];
+
+        let mut browse_info = BROWSEINFOW {
+            hwndOwner: HWND(std::ptr::null_mut()),
+            pidlRoot: std::ptr::null_mut(),
+            pszDisplayName: windows::core::PWSTR(display_name.as_mut_ptr()),
+            lpszTitle: PCWSTR(title.as_ptr()),
+            ulFlags: BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE,
+            lpfn: None,
+            lParam: windows::Win32::Foundation::LPARAM(0),
+            iImage: 0,
+        };
+
+        let pidl = SHBrowseForFolderW(&mut browse_info);
+
+        if pidl.is_null() {
+            return None; // Benutzer hat Abbrechen gedrückt
+        }
+
+        let mut path_buf = [0u16; 260];
+        let result = SHGetPathFromIDListW(pidl, &mut path_buf);
+        if result.as_bool() {
+            let path_str = String::from_utf16_lossy(
+                &path_buf[..path_buf.iter().position(|&c| c == 0).unwrap_or(0)],
+            );
+            Some(PathBuf::from(path_str))
+        } else {
+            None
+        }
     }
 
     pub fn reload() {
