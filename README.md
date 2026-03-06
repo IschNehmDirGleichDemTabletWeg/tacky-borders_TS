@@ -7,8 +7,9 @@ _tacky-borders_ lets you customize window borders on Windows 10 and 11.
 
 --------------------------------------------------
 This fork has added a Windows Explorer Open dialog to select your folder where to store the config and log files and stores it in the registry.
-
-I added also an example file here https://github.com/IschNehmDirGleichDemTabletWeg/tacky-borders_TS/blob/main/config.yaml
+Additionally I added a new setting "Border width for maximized windows"
+I added also an example config.ymal to show the border as seen in the screenshot.
+-> https://github.com/IschNehmDirGleichDemTabletWeg/tacky-borders_TS/blob/main/config.yaml
 
 --------------------------------------------------
 
